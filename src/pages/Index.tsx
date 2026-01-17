@@ -23,11 +23,12 @@ import { api, User, Chat as ApiChat, Message as ApiMessage, Report as ApiReport 
 const Index = () => {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoginOpen, setIsLoginOpen] = useState(true);
-  const [isRegister, setIsRegister] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [smsCode, setSmsCode] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [step, setStep] = useState<'phone' | 'code' | 'profile'>('phone');
+  const [devCode, setDevCode] = useState('');
   
   const [selectedChat, setSelectedChat] = useState<ApiChat | null>(null);
   const [messageInput, setMessageInput] = useState('');
@@ -58,18 +59,52 @@ const Index = () => {
     }
   }, [searchQuery]);
 
-  const handleAuth = async () => {
-    if (!username || !password) {
-      toast({ title: 'Ошибка', description: 'Заполните все поля', variant: 'destructive' });
+  const handleSendCode = async () => {
+    if (!phone || phone.length < 10) {
+      toast({ title: 'Ошибка', description: 'Введите корректный номер телефона', variant: 'destructive' });
       return;
     }
 
     setIsLoading(true);
     try {
-      const result = await api.register(username, password, fullName || username);
+      const result = await api.sendSmsCode(phone);
+      setDevCode(result.dev_code || '');
+      setStep('code');
+      toast({ 
+        title: 'Код отправлен', 
+        description: result.dev_code ? `Ваш код: ${result.dev_code}` : 'Проверьте SMS' 
+      });
+    } catch (error: any) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!smsCode || smsCode.length !== 6) {
+      toast({ title: 'Ошибка', description: 'Введите 6-значный код', variant: 'destructive' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await api.verifySmsCode(phone, smsCode);
+      setStep('profile');
+      toast({ title: 'Успех', description: 'Телефон подтвержден' });
+    } catch (error: any) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setIsLoading(true);
+    try {
+      const result = await api.register(phone, username, fullName || username || phone);
       setCurrentUser(result.user);
       localStorage.setItem('user', JSON.stringify(result.user));
-      setIsLoginOpen(false);
       toast({ title: 'Успех', description: 'Вы вошли в систему' });
     } catch (error: any) {
       toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
@@ -160,29 +195,61 @@ const Index = () => {
         <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-lg">
           <h1 className="text-2xl font-bold mb-6 text-center">Messenger</h1>
           
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="username"
-              />
+          {step === 'phone' && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="phone">Номер телефона</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+7 999 123 45 67"
+                />
+              </div>
+              <Button onClick={handleSendCode} className="w-full" disabled={isLoading}>
+                {isLoading ? 'Отправка...' : 'Получить код'}
+              </Button>
             </div>
-            
-            <div>
-              <Label htmlFor="password">Пароль</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••"
-              />
-            </div>
+          )}
 
-            {isRegister && (
+          {step === 'code' && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="code">Код из SMS</Label>
+                <Input
+                  id="code"
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value)}
+                  placeholder="123456"
+                  maxLength={6}
+                />
+                {devCode && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Код для разработки: {devCode}
+                  </p>
+                )}
+              </div>
+              <Button onClick={handleVerifyCode} className="w-full" disabled={isLoading}>
+                {isLoading ? 'Проверка...' : 'Подтвердить'}
+              </Button>
+              <Button onClick={() => setStep('phone')} variant="outline" className="w-full">
+                Назад
+              </Button>
+            </div>
+          )}
+
+          {step === 'profile' && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="username">Username (необязательно)</Label>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="username"
+                />
+              </div>
               <div>
                 <Label htmlFor="fullname">Имя (необязательно)</Label>
                 <Input
@@ -192,20 +259,11 @@ const Index = () => {
                   placeholder="Ваше имя"
                 />
               </div>
-            )}
-
-            <Button 
-              onClick={handleAuth} 
-              className="w-full" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Загрузка...' : 'Войти / Регистрация'}
-            </Button>
-
-            <p className="text-xs text-center text-muted-foreground mt-4">
-              При первом входе будет создан новый аккаунт
-            </p>
-          </div>
+              <Button onClick={handleRegister} className="w-full" disabled={isLoading}>
+                {isLoading ? 'Загрузка...' : 'Продолжить'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -236,8 +294,10 @@ const Index = () => {
                     </div>
                     <Separator />
                     <div>
-                      <Label>Ваш username</Label>
-                      <p className="text-sm text-muted-foreground mt-1">@{currentUser.username}</p>
+                      <Label>Ваш профиль</Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {currentUser.username ? `@${currentUser.username}` : currentUser.phone}
+                      </p>
                     </div>
                     {currentUser.is_admin && (
                       <Badge variant="secondary">Администратор</Badge>
@@ -297,7 +357,7 @@ const Index = () => {
                       <div className="relative">
                         <Avatar>
                           <AvatarImage src={chat.avatar_url || ''} />
-                          <AvatarFallback>{chat.username[0].toUpperCase()}</AvatarFallback>
+                          <AvatarFallback>{(chat.username || chat.full_name || 'U')[0].toUpperCase()}</AvatarFallback>
                         </Avatar>
                         {chat.is_online && (
                           <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
@@ -305,7 +365,7 @@ const Index = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium text-sm">@{chat.username}</span>
+                          <span className="font-medium text-sm">{chat.username ? `@${chat.username}` : chat.full_name}</span>
                           <span className="text-xs text-muted-foreground">
                             {chat.last_message_time ? new Date(chat.last_message_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
                           </span>
@@ -339,12 +399,12 @@ const Index = () => {
                       <div className="relative">
                         <Avatar>
                           <AvatarImage src={contact.avatar_url || ''} />
-                          <AvatarFallback>{contact.username[0].toUpperCase()}</AvatarFallback>
+                          <AvatarFallback>{(contact.username || contact.full_name || 'U')[0].toUpperCase()}</AvatarFallback>
                         </Avatar>
                       </div>
                       <div>
-                        <p className="font-medium text-sm">{contact.full_name || contact.username}</p>
-                        <p className="text-xs text-muted-foreground">@{contact.username}</p>
+                        <p className="font-medium text-sm">{contact.full_name || contact.username || contact.phone}</p>
+                        <p className="text-xs text-muted-foreground">{contact.username ? `@${contact.username}` : contact.phone}</p>
                       </div>
                     </div>
                   </div>
@@ -411,14 +471,14 @@ const Index = () => {
               <div className="relative">
                 <Avatar>
                   <AvatarImage src={selectedChat.avatar_url || ''} />
-                  <AvatarFallback>{selectedChat.username[0].toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>{(selectedChat.username || selectedChat.full_name || 'U')[0].toUpperCase()}</AvatarFallback>
                 </Avatar>
                 {selectedChat.is_online && (
                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                 )}
               </div>
               <div className="flex-1">
-                <p className="font-medium">@{selectedChat.username}</p>
+                <p className="font-medium">{selectedChat.username ? `@${selectedChat.username}` : selectedChat.full_name}</p>
                 <p className="text-xs text-muted-foreground">
                   {selectedChat.is_online ? 'онлайн' : 'не в сети'}
                 </p>

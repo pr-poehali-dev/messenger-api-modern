@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 def handler(event: dict, context) -> dict:
-    """API для регистрации, авторизации и управления пользователями"""
+    """API для регистрации, авторизации по телефону/username и управления пользователями"""
     
     method = event.get('httpMethod', 'GET')
     
@@ -39,24 +39,43 @@ def handler(event: dict, context) -> dict:
         
         if method == 'POST':
             body = json.loads(event.get('body', '{}'))
+            phone = body.get('phone', '').strip()
             username = body.get('username', '').strip()
-            password = body.get('password', '')
             full_name = body.get('full_name', '')
             
-            if not username or not password:
+            if not phone and not username:
                 return {
                     'statusCode': 400,
                     'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                    'body': json.dumps({'error': 'Username and password required'}),
+                    'body': json.dumps({'error': 'Phone or username required'}),
                     'isBase64Encoded': False
                 }
             
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            cur.execute(
+                "SELECT id, username, full_name, phone, is_admin, avatar_url FROM t_p33435224_messenger_api_modern.users WHERE phone = %s OR username = %s",
+                (phone, username)
+            )
+            existing_user = cur.fetchone()
+            
+            if existing_user:
+                token = secrets.token_urlsafe(32)
+                return {
+                    'statusCode': 200,
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                    'body': json.dumps({
+                        'user': dict(existing_user),
+                        'token': token
+                    }),
+                    'isBase64Encoded': False
+                }
             
             try:
                 cur.execute(
-                    "INSERT INTO users (username, password_hash, full_name) VALUES (%s, %s, %s) RETURNING id, username, full_name",
-                    (username, password_hash, full_name)
+                    """INSERT INTO t_p33435224_messenger_api_modern.users 
+                       (username, phone, full_name, password_hash) 
+                       VALUES (%s, %s, %s, %s) 
+                       RETURNING id, username, phone, full_name, is_admin, avatar_url""",
+                    (username or phone or f'user_{secrets.token_hex(4)}', phone or None, full_name, hashlib.sha256(b'').hexdigest())
                 )
                 user = cur.fetchone()
                 conn.commit()
@@ -72,12 +91,12 @@ def handler(event: dict, context) -> dict:
                     }),
                     'isBase64Encoded': False
                 }
-            except psycopg2.IntegrityError:
+            except psycopg2.IntegrityError as e:
                 conn.rollback()
                 return {
                     'statusCode': 409,
                     'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                    'body': json.dumps({'error': 'Username already exists'}),
+                    'body': json.dumps({'error': 'Username or phone already exists'}),
                     'isBase64Encoded': False
                 }
         
@@ -93,8 +112,11 @@ def handler(event: dict, context) -> dict:
                 }
             
             cur.execute(
-                "SELECT id, username, full_name, avatar_url, is_online FROM users WHERE username ILIKE %s OR full_name ILIKE %s LIMIT 20",
-                (f'%{query}%', f'%{query}%')
+                """SELECT id, username, full_name, phone, avatar_url, is_online 
+                   FROM t_p33435224_messenger_api_modern.users 
+                   WHERE username ILIKE %s OR full_name ILIKE %s OR phone ILIKE %s 
+                   LIMIT 20""",
+                (f'%{query}%', f'%{query}%', f'%{query}%')
             )
             users = cur.fetchall()
             

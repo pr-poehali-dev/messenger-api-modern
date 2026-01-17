@@ -1,18 +1,17 @@
 {
   "tests": [
     {
-      "name": "Register new user",
+      "name": "Register new user by phone",
       "method": "POST",
       "path": "/",
       "body": {
-        "username": "testuser",
-        "password": "testpass123",
+        "phone": "+79991234567",
         "full_name": "Test User"
       },
       "expectedStatus": 201,
       "expectedBody": {
         "user": {
-          "username": "string"
+          "phone": "string"
         },
         "token": "string"
       },
