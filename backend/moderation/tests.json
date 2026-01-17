@@ -1,0 +1,34 @@
+{
+  "tests": [
+    {
+      "name": "Submit report",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "3"
+      },
+      "body": {
+        "reported_user_id": 2,
+        "reason": "Spam messages"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "report_id": "number"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get reports (admin)",
+      "method": "GET",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "reports": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

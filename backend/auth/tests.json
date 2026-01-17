@@ -1,0 +1,32 @@
+{
+  "tests": [
+    {
+      "name": "Register new user",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "username": "testuser",
+        "password": "testpass123",
+        "full_name": "Test User"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "user": {
+          "username": "string"
+        },
+        "token": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search users by username",
+      "method": "GET",
+      "path": "/?q=admin",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "users": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
