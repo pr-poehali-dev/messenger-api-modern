@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,129 +17,199 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-
-type Message = {
-  id: number;
-  text: string;
-  sender: 'me' | 'other';
-  timestamp: string;
-};
-
-type Chat = {
-  id: number;
-  username: string;
-  lastMessage: string;
-  timestamp: string;
-  unread: number;
-  avatar: string;
-  online: boolean;
-};
-
-type Contact = {
-  id: number;
-  username: string;
-  name: string;
-  avatar: string;
-  online: boolean;
-};
-
-type Report = {
-  id: number;
-  reportedUser: string;
-  reportedBy: string;
-  reason: string;
-  timestamp: string;
-  status: 'pending' | 'reviewed' | 'resolved';
-};
+import { useToast } from '@/hooks/use-toast';
+import { api, User, Chat as ApiChat, Message as ApiMessage, Report as ApiReport } from '@/lib/api';
 
 const Index = () => {
-  const [currentUser] = useState({ username: 'user123', isAdmin: false });
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
+  const { toast } = useToast();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoginOpen, setIsLoginOpen] = useState(true);
+  const [isRegister, setIsRegister] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  
+  const [selectedChat, setSelectedChat] = useState<ApiChat | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('chats');
+  
+  const [chats, setChats] = useState<ApiChat[]>([]);
+  const [messages, setMessages] = useState<ApiMessage[]>([]);
+  const [contacts, setContacts] = useState<User[]>([]);
+  const [reports, setReports] = useState<ApiReport[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [chats] = useState<Chat[]>([
-    {
-      id: 1,
-      username: 'alexdev',
-      lastMessage: 'Привет! Как дела?',
-      timestamp: '14:23',
-      unread: 2,
-      avatar: '',
-      online: true,
-    },
-    {
-      id: 2,
-      username: 'maria_design',
-      lastMessage: 'Отправила макеты',
-      timestamp: '13:45',
-      unread: 0,
-      avatar: '',
-      online: false,
-    },
-    {
-      id: 3,
-      username: 'support_bot',
-      lastMessage: 'Добро пожаловать! Если нужна помощь, напишите.',
-      timestamp: 'вчера',
-      unread: 0,
-      avatar: '',
-      online: true,
-    },
-  ]);
+  useEffect(() => {
+    if (currentUser) {
+      loadChats();
+    }
+  }, [currentUser]);
 
-  const [contacts] = useState<Contact[]>([
-    { id: 1, username: 'alexdev', name: 'Алексей', avatar: '', online: true },
-    { id: 2, username: 'maria_design', name: 'Мария', avatar: '', online: false },
-    { id: 3, username: 'john_smith', name: 'Джон', avatar: '', online: true },
-  ]);
+  useEffect(() => {
+    if (selectedChat && currentUser) {
+      loadMessages(selectedChat.chat_id);
+    }
+  }, [selectedChat]);
 
-  const [reports] = useState<Report[]>([
-    {
-      id: 1,
-      reportedUser: 'spammer123',
-      reportedBy: 'user456',
-      reason: 'Спам в личных сообщениях',
-      timestamp: '2 часа назад',
-      status: 'pending',
-    },
-    {
-      id: 2,
-      reportedUser: 'baduser',
-      reportedBy: 'user789',
-      reason: 'Оскорбительные сообщения',
-      timestamp: '5 часов назад',
-      status: 'reviewed',
-    },
-  ]);
+  useEffect(() => {
+    if (searchQuery && currentUser) {
+      searchUsers();
+    }
+  }, [searchQuery]);
 
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 1, text: 'Привет!', sender: 'other', timestamp: '14:20' },
-    { id: 2, text: 'Как дела?', sender: 'other', timestamp: '14:23' },
-  ]);
+  const handleAuth = async () => {
+    if (!username || !password) {
+      toast({ title: 'Ошибка', description: 'Заполните все поля', variant: 'destructive' });
+      return;
+    }
 
-  const sendMessage = () => {
-    if (messageInput.trim() && selectedChat) {
-      const newMessage: Message = {
-        id: messages.length + 1,
-        text: messageInput,
-        sender: 'me',
-        timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages([...messages, newMessage]);
-      setMessageInput('');
+    setIsLoading(true);
+    try {
+      const result = await api.register(username, password, fullName || username);
+      setCurrentUser(result.user);
+      localStorage.setItem('user', JSON.stringify(result.user));
+      setIsLoginOpen(false);
+      toast({ title: 'Успех', description: 'Вы вошли в систему' });
+    } catch (error: any) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const filteredChats = chats.filter((chat) =>
-    chat.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadChats = async () => {
+    if (!currentUser) return;
+    try {
+      const data = await api.getChats(currentUser.id);
+      setChats(data);
+    } catch (error) {
+      console.error('Failed to load chats:', error);
+    }
+  };
 
-  const filteredContacts = contacts.filter((contact) =>
-    contact.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadMessages = async (chatId: number) => {
+    if (!currentUser) return;
+    try {
+      const data = await api.getMessages(currentUser.id, chatId);
+      setMessages(data);
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+    }
+  };
+
+  const searchUsers = async () => {
+    try {
+      const users = await api.searchUsers(searchQuery);
+      setContacts(users);
+    } catch (error) {
+      console.error('Search failed:', error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageInput.trim() || !selectedChat || !currentUser) return;
+
+    try {
+      await api.sendMessage(currentUser.id, selectedChat.user_id, messageInput);
+      setMessageInput('');
+      await loadMessages(selectedChat.chat_id);
+      await loadChats();
+    } catch (error: any) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const startChat = async (user: User) => {
+    if (!currentUser) return;
+    
+    const existingChat = chats.find(c => c.user_id === user.id);
+    if (existingChat) {
+      setSelectedChat(existingChat);
+      return;
+    }
+
+    try {
+      await api.sendMessage(currentUser.id, user.id, 'Привет!');
+      await loadChats();
+      toast({ title: 'Чат создан', description: `Начат диалог с @${user.username}` });
+    } catch (error: any) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const loadReports = async () => {
+    if (!currentUser || !currentUser.is_admin) return;
+    try {
+      const data = await api.getReports(currentUser.id);
+      setReports(data);
+    } catch (error) {
+      console.error('Failed to load reports:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser?.is_admin && activeTab === 'moderation') {
+      loadReports();
+    }
+  }, [activeTab, currentUser]);
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-lg">
+          <h1 className="text-2xl font-bold mb-6 text-center">Messenger</h1>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="username"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="password">Пароль</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••"
+              />
+            </div>
+
+            {isRegister && (
+              <div>
+                <Label htmlFor="fullname">Имя (необязательно)</Label>
+                <Input
+                  id="fullname"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Ваше имя"
+                />
+              </div>
+            )}
+
+            <Button 
+              onClick={handleAuth} 
+              className="w-full" 
+              disabled={isLoading}
+            >
+              {isLoading ? 'Загрузка...' : 'Войти / Регистрация'}
+            </Button>
+
+            <p className="text-xs text-center text-muted-foreground mt-4">
+              При первом входе будет создан новый аккаунт
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-white">
@@ -164,16 +234,22 @@ const Index = () => {
                       <Label htmlFor="notifications">Уведомления</Label>
                       <Switch id="notifications" defaultChecked />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="online">Статус онлайн</Label>
-                      <Switch id="online" defaultChecked />
-                    </div>
                     <Separator />
                     <div>
                       <Label>Ваш username</Label>
                       <p className="text-sm text-muted-foreground mt-1">@{currentUser.username}</p>
                     </div>
-                    <Button variant="outline" className="w-full">
+                    {currentUser.is_admin && (
+                      <Badge variant="secondary">Администратор</Badge>
+                    )}
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => {
+                        localStorage.removeItem('user');
+                        setCurrentUser(null);
+                      }}
+                    >
                       <Icon name="LogOut" size={16} className="mr-2" />
                       Выйти
                     </Button>
@@ -186,7 +262,7 @@ const Index = () => {
           <div className="relative">
             <Icon name="Search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Поиск..."
+              placeholder="Поиск пользователей..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -195,70 +271,136 @@ const Index = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <TabsList className="w-full grid grid-cols-2 rounded-none border-b">
+          <TabsList className={`w-full grid ${currentUser.is_admin ? 'grid-cols-3' : 'grid-cols-2'} rounded-none border-b`}>
             <TabsTrigger value="chats">Чаты</TabsTrigger>
             <TabsTrigger value="contacts">Контакты</TabsTrigger>
+            {currentUser.is_admin && <TabsTrigger value="moderation">Модерация</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="chats" className="flex-1 mt-0">
             <ScrollArea className="h-full">
-              {filteredChats.map((chat) => (
-                <div
-                  key={chat.id}
-                  onClick={() => setSelectedChat(chat)}
-                  className={`p-4 border-b border-border cursor-pointer hover:bg-accent transition-colors ${
-                    selectedChat?.id === chat.id ? 'bg-accent' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="relative">
-                      <Avatar>
-                        <AvatarImage src={chat.avatar} />
-                        <AvatarFallback>{chat.username[0].toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      {chat.online && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+              {chats.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">
+                  <p>Нет чатов</p>
+                  <p className="text-xs mt-2">Найдите пользователя через поиск</p>
+                </div>
+              ) : (
+                chats.map((chat) => (
+                  <div
+                    key={chat.chat_id}
+                    onClick={() => setSelectedChat(chat)}
+                    className={`p-4 border-b border-border cursor-pointer hover:bg-accent transition-colors ${
+                      selectedChat?.chat_id === chat.chat_id ? 'bg-accent' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="relative">
+                        <Avatar>
+                          <AvatarImage src={chat.avatar_url || ''} />
+                          <AvatarFallback>{chat.username[0].toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        {chat.is_online && (
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm">@{chat.username}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {chat.last_message_time ? new Date(chat.last_message_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{chat.last_message || 'Нет сообщений'}</p>
+                      </div>
+                      {chat.unread_count > 0 && (
+                        <Badge className="bg-primary text-primary-foreground">{chat.unread_count}</Badge>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm">@{chat.username}</span>
-                        <span className="text-xs text-muted-foreground">{chat.timestamp}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-                    </div>
-                    {chat.unread > 0 && (
-                      <Badge className="bg-primary text-primary-foreground">{chat.unread}</Badge>
-                    )}
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </ScrollArea>
           </TabsContent>
 
           <TabsContent value="contacts" className="flex-1 mt-0">
             <ScrollArea className="h-full">
-              {filteredContacts.map((contact) => (
-                <div key={contact.id} className="p-4 border-b border-border hover:bg-accent transition-colors cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <Avatar>
-                        <AvatarImage src={contact.avatar} />
-                        <AvatarFallback>{contact.name[0]}</AvatarFallback>
-                      </Avatar>
-                      {contact.online && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{contact.name}</p>
-                      <p className="text-xs text-muted-foreground">@{contact.username}</p>
+              {contacts.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground">
+                  <p>Введите username в поиск</p>
+                </div>
+              ) : (
+                contacts.map((contact) => (
+                  <div 
+                    key={contact.id} 
+                    className="p-4 border-b border-border hover:bg-accent transition-colors cursor-pointer"
+                    onClick={() => startChat(contact)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <Avatar>
+                          <AvatarImage src={contact.avatar_url || ''} />
+                          <AvatarFallback>{contact.username[0].toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{contact.full_name || contact.username}</p>
+                        <p className="text-xs text-muted-foreground">@{contact.username}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </ScrollArea>
           </TabsContent>
+
+          {currentUser.is_admin && (
+            <TabsContent value="moderation" className="flex-1 mt-0">
+              <ScrollArea className="h-full">
+                {reports.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <p>Нет жалоб</p>
+                  </div>
+                ) : (
+                  reports.map((report) => (
+                    <div key={report.id} className="p-4 border-b border-border">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">@{report.reported_username}</span>
+                          <Badge variant={report.status === 'pending' ? 'default' : 'secondary'}>
+                            {report.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{report.reason}</p>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>От: @{report.reported_by_username}</span>
+                          <span>{new Date(report.created_at).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        {report.status === 'pending' && (
+                          <div className="flex gap-2 mt-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="flex-1"
+                              onClick={() => api.resolveReport(currentUser.id, report.id, 'reviewed')}
+                            >
+                              Отклонить
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => api.resolveReport(currentUser.id, report.id, 'resolved')}
+                            >
+                              Заблокировать
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </ScrollArea>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -268,22 +410,19 @@ const Index = () => {
             <div className="p-4 border-b border-border flex items-center gap-3">
               <div className="relative">
                 <Avatar>
-                  <AvatarImage src={selectedChat.avatar} />
+                  <AvatarImage src={selectedChat.avatar_url || ''} />
                   <AvatarFallback>{selectedChat.username[0].toUpperCase()}</AvatarFallback>
                 </Avatar>
-                {selectedChat.online && (
+                {selectedChat.is_online && (
                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                 )}
               </div>
               <div className="flex-1">
                 <p className="font-medium">@{selectedChat.username}</p>
                 <p className="text-xs text-muted-foreground">
-                  {selectedChat.online ? 'онлайн' : 'не в сети'}
+                  {selectedChat.is_online ? 'онлайн' : 'не в сети'}
                 </p>
               </div>
-              <Button variant="ghost" size="icon">
-                <Icon name="MoreVertical" size={20} />
-              </Button>
             </div>
 
             <ScrollArea className="flex-1 p-4">
@@ -291,20 +430,20 @@ const Index = () => {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${message.sender_id === currentUser.id ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
                       className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                        message.sender === 'me'
+                        message.sender_id === currentUser.id
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-secondary text-secondary-foreground'
                       }`}
                     >
-                      <p className="text-sm">{message.text}</p>
+                      <p className="text-sm">{message.message_text}</p>
                       <span className={`text-xs mt-1 block ${
-                        message.sender === 'me' ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                        message.sender_id === currentUser.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
                       }`}>
-                        {message.timestamp}
+                        {new Date(message.sent_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   </div>
@@ -314,9 +453,6 @@ const Index = () => {
 
             <div className="p-4 border-t border-border">
               <div className="flex gap-2">
-                <Button variant="ghost" size="icon">
-                  <Icon name="Paperclip" size={20} />
-                </Button>
                 <Input
                   placeholder="Сообщение..."
                   value={messageInput}
