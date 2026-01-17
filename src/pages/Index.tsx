@@ -93,7 +93,7 @@ const Index = () => {
     { id: 1, username: 'alexdev', name: 'Алексей', avatar: '', online: true },
     { id: 2, username: 'maria_design', name: 'Мария', avatar: '', online: false },
     { id: 3, username: 'john_smith', name: 'Джон', avatar: '', online: true },
-  ];
+  ]);
 
   const [reports] = useState<Report[]>([
     {
